@@ -57,7 +57,7 @@ __all__ = ["DecisionTreeClassifier",
 DTYPE = _tree.DTYPE
 DOUBLE = _tree.DOUBLE
 
-CRITERIA_CLF = {"gini": _criterion.Gini, "entropy": _criterion.Entropy}
+CRITERIA_CLF = {"gini": _criterion.Gini, "entropy": _criterion.Entropy, "hellinger": _criterion.Hellinger}
 CRITERIA_REG = {"mse": _criterion.MSE, "friedman_mse": _criterion.FriedmanMSE,
                 "mae": _criterion.MAE}
 
@@ -150,6 +150,10 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
             for k in range(self.n_outputs_):
                 classes_k, y_encoded[:, k] = np.unique(y[:, k],
                                                        return_inverse=True)
+
+                if(self.criterion == "hellinger" and classes_k.shape[0]>2):
+                    raise ValueError("Hellinger criteria only available for 2 class classification")
+
                 self.classes_.append(classes_k)
                 self.n_classes_.append(classes_k.shape[0])
             y = y_encoded

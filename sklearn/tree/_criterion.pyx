@@ -20,7 +20,7 @@ from libc.stdlib cimport calloc
 from libc.stdlib cimport free
 from libc.string cimport memcpy
 from libc.string cimport memset
-from libc.math cimport fabs
+from libc.math cimport fabs, sqrt
 
 import numpy as np
 cimport numpy as np
@@ -687,6 +687,113 @@ cdef class Gini(ClassificationCriterion):
 
         impurity_left[0] = gini_left / self.n_outputs
         impurity_right[0] = gini_right / self.n_outputs
+
+cdef class Hellinger(ClassificationCriterion):
+    """Hellinger Distance impurity criterion for 2 class classification.
+
+    This handles cases where the target is a classification taking values
+    0, 1, ... K-2, K-1. If node m represents a region Rm with Nm observations,
+    then let
+
+        count_k = 1/ Nm \sum_{x_i in Rm} I(yi = k)
+
+    be the proportion of class k observations in node m.
+
+    The Hellinger Distance is then defined as:
+
+        hellinger_ distance = \sqrt{ \sum_{k=1}^{K-1} \left( \sqrt{count_+} - \sqrt{count_-}\right)^{2} }
+
+    where
+    count_+ is the probability of the k'th feature dimension belonging to the positive class and
+    count_- is the probability of the k'th feature dimension belonging to the negative class.
+    """
+
+    cdef double node_impurity(self) nogil:
+        """Evaluate the impurity of the current node, i.e. the impurity of
+        samples[start:end] using Hellinger Distance."""
+
+
+        cdef SIZE_t* n_classes = self.n_classes
+        cdef double* sum_total = self.sum_total
+        cdef double hellinger_distance = 0.0
+        cdef double feature_partition_distance #component of total distance calculation
+
+        """Positive and negative variable labels below are arbitrary as calculation is symmetric"""
+        cdef double probability_positive
+        cdef double probability_negative
+
+        cdef SIZE_t k
+
+        for k in range(self.n_outputs): #possible feature values
+            feature_partition_distance = 0.0
+
+            probability_positive = sum_total[0]
+            probability_negative = sum_total[1]
+
+            feature_partition_distance += sqrt(probability_positive) - sqrt(probability_negative)
+
+            hellinger_distance += (feature_partition_distance * feature_partition_distance) / (self.weighted_n_node_samples *
+                                      self.weighted_n_node_samples)
+
+            sum_total += self.sum_stride
+
+        return sqrt(hellinger_distance)
+
+    cdef void children_impurity(self, double* impurity_left,
+                                double* impurity_right) nogil:
+        """Evaluate the impurity in children nodes
+
+        i.e. the impurity of the left child (samples[start:pos]) and the
+        impurity the right child (samples[pos:end]) using Hellinger distance.
+
+        Parameters
+        ----------
+        impurity_left : DTYPE_t
+            The memory address to save the impurity of the left node to
+        impurity_right : DTYPE_t
+            The memory address to save the impurity of the right node to
+        """
+
+        cdef SIZE_t* n_classes = self.n_classes
+        cdef double* sum_left = self.sum_left
+        cdef double* sum_right = self.sum_right
+        cdef double hellinger_distance_left = 0.0
+        cdef double hellinger_distance_right = 0.0
+        cdef double feature_partition_distance_left
+        cdef double feature_partition_distance_right
+
+        """Positive and negative variable labels below are arbitrary as calculation is symmetric"""
+        cdef double probability_positive
+        cdef double probability_negative
+
+        cdef SIZE_t k
+
+        for k in range(self.n_outputs):
+            feature_partition_distance_left = 0.0
+            feature_partition_distance_right = 0.0
+
+            #left branch
+            probability_positive = sum_left[0]
+            probability_negative = sum_left[1]
+            feature_partition_distance_left += sqrt(probability_positive) - sqrt(probability_negative)
+
+            #right branch
+            probability_positive = sum_right[0]
+            probability_negative = sum_right[1]
+            feature_partition_distance_right += sqrt(probability_positive) - sqrt(probability_negative)
+
+
+            hellinger_distance_left += ( feature_partition_distance_left * feature_partition_distance_left) / (self.weighted_n_left *
+                                                self.weighted_n_left)
+
+            hellinger_distance_right += ( feature_partition_distance_right * feature_partition_distance_right) / (self.weighted_n_right *
+                                                  self.weighted_n_right)
+
+            sum_left += self.sum_stride
+            sum_right += self.sum_stride
+
+        impurity_left[0] = sqrt(hellinger_distance_left)
+        impurity_right[0] = sqrt(hellinger_distance_right)
 
 
 cdef class RegressionCriterion(Criterion):
