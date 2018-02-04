@@ -151,7 +151,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                 classes_k, y_encoded[:, k] = np.unique(y[:, k],
                                                        return_inverse=True)
 
-                if(self.criterion == "hellinger" and classes_k.shape[0]>2):
+                if(self.criterion == "hellinger" and classes_k.shape[0]!=2):
                     raise ValueError("Hellinger criteria only available for 2 class classification")
 
                 self.classes_.append(classes_k)

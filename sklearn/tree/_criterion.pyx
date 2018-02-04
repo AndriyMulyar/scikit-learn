@@ -737,7 +737,7 @@ cdef class Hellinger(ClassificationCriterion):
 
             sum_total += self.sum_stride
 
-        return sqrt(hellinger_distance)
+        return sqrt(2) - sqrt(hellinger_distance)
 
     cdef void children_impurity(self, double* impurity_left,
                                 double* impurity_right) nogil:
@@ -792,8 +792,8 @@ cdef class Hellinger(ClassificationCriterion):
             sum_left += self.sum_stride
             sum_right += self.sum_stride
 
-        impurity_left[0] = sqrt(hellinger_distance_left)
-        impurity_right[0] = sqrt(hellinger_distance_right)
+        impurity_left[0] = sqrt(2) - sqrt(hellinger_distance_left)
+        impurity_right[0] = sqrt(2) - sqrt(hellinger_distance_right)
 
 
 cdef class RegressionCriterion(Criterion):
