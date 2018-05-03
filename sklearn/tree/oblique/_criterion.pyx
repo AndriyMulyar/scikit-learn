@@ -1,6 +1,9 @@
 from abc import ABC, abstractmethod
 import numpy as np, math
+cimport numpy as np
 from ._meta import ObliqueSplitRecord
+
+
 """
 A collection of splitting criteria for decision trees
 """
@@ -16,6 +19,8 @@ def get_class_counts(instances, left_boundary, right_boundary, y):
     :param right_boundary: the right boundary in instances array
     :return: an array of length unique_classes holding class counts for each class
     """
+    cdef np.npy_intp i
+    #cdef np.ndarray[np.int32_t] class_counts
 
     classes = []
 
@@ -26,7 +31,7 @@ def get_class_counts(instances, left_boundary, right_boundary, y):
         if not class_label in classes:
             classes.append(class_label)
 
-    class_counts = np.zeros(len(classes))
+    class_counts = np.zeros(len(classes), dtype=np.int32)
 
     #calculate class counts and store in class_counts
     for i in range(left_boundary, right_boundary+1):
@@ -77,9 +82,14 @@ class Gini(Criterion):
         :param right_boundary: index in instances of the right_boundary_index of possible split
         :return:
         """
+        cdef double gini
+        cdef int c
+
         num_instances = 1+right_boundary-left_boundary
 
         class_counts = get_class_counts(instances, left_boundary, right_boundary, self.y)
+        if(len(class_counts) < 2):
+            return 0
 
         gini = 0
 
@@ -106,19 +116,30 @@ class Hellinger(Criterion):
         :param split_record:
         :return:
         """
+        cdef double hellinger
+        cdef int c
 
         num_instances = 1 + right_boundary - left_boundary
 
         class_counts = get_class_counts(instances, left_boundary, right_boundary, self.y)
+        if(len(class_counts) < 2):
+            return 0
 
         hellinger = 0
 
-        for c1 in range(len(class_counts)): #for each class
-            for c2 in range(c1):
+        for c1 in range(0,len(class_counts)-1): #for each class
+            #print(class_counts)
+            for c2 in range(c1+1,len(class_counts)):
                 prob_c1 = class_counts[c1]/num_instances
                 prob_c2 = class_counts[c2]/num_instances
 
                 pair_wise_distance = math.sqrt(prob_c1) - math.sqrt(prob_c2)
                 hellinger += pair_wise_distance*pair_wise_distance
 
-        return 1 - math.sqrt(hellinger/2)
+        # prob_c1 = class_counts[0]/num_instances
+        # prob_c2 = class_counts[1]/num_instances
+        #
+        # pair_wise_distance = math.sqrt(prob_c1) - math.sqrt(prob_c2)
+        # hellinger += pair_wise_distance*pair_wise_distance
+
+        return math.sqrt(2) - math.sqrt(hellinger)

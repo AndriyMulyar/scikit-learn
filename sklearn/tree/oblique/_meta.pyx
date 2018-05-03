@@ -1,7 +1,11 @@
+# cython: profile=True
 import numpy as np
+cimport numpy as np
 """
 A meta file to hold wrapper classes
 """
+
+
 class DecisionNode:
     """
     A class to encapsulate a Decision Node on a tree
@@ -33,7 +37,7 @@ class ObliqueSplitRecord:
     """
     def __init__(self, dimensions):
         self.dimensions = dimensions
-        self.hyperplane = np.zeros(dimensions+1, np.float32) #coefficient hyperplane
+        self.hyperplane = np.zeros(dimensions+1, np.double) #coefficient hyperplane
 
         self.impurity_total = None  # stores the impurity of the current node
         self.impurity_left = None  #stores the impurity of left child
@@ -52,7 +56,7 @@ class ObliqueSplitRecord:
         total = self.number_of_instances_left + self.number_of_instances_right
         return self.impurity_total - (self.number_of_instances_left*self.impurity_left + self.number_of_instances_right*self.impurity_right)/total
 
-def hyperplane_compare(vector, hyperplane):
+cpdef double hyperplane_compare(vector, hyperplane):
     """
     Compares the location of vector relative to hyperplane
 
@@ -60,9 +64,10 @@ def hyperplane_compare(vector, hyperplane):
     :param hyperplane: the hyperlane (a vector with n+1 elements)
     :return: negative number if vector is below hyperplane, 0 if on hyperplane, positive number if above hyperplane
     """
-
+    cdef double dot
+    cdef int i
     dot = 0
     for i in range(len(vector)):
-        dot+=vector[i]*hyperplane[i]
+        dot += vector[i]*hyperplane[i]
 
     return dot+hyperplane[-1]

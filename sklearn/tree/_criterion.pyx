@@ -21,7 +21,7 @@ from libc.stdlib cimport free
 from libc.string cimport memcpy
 from libc.string cimport memset
 from libc.math cimport fabs, sqrt
-
+from libc.stdio cimport printf
 import numpy as np
 cimport numpy as np
 np.import_array()
@@ -203,9 +203,9 @@ cdef class Criterion:
         self.children_impurity(&impurity_left, &impurity_right)
 
         return ((self.weighted_n_node_samples / self.weighted_n_samples) *
-                (impurity - (self.weighted_n_right / 
+                (impurity - (self.weighted_n_right /
                              self.weighted_n_node_samples * impurity_right)
-                          - (self.weighted_n_left / 
+                          - (self.weighted_n_left /
                              self.weighted_n_node_samples * impurity_left)))
 
 
@@ -724,16 +724,16 @@ cdef class Hellinger(ClassificationCriterion):
 
         cdef SIZE_t k
 
-        for k in range(self.n_outputs): #possible feature values
+        for k in range(self.n_outputs): #possible class values
+
             feature_partition_distance = 0.0
 
-            probability_positive = sum_total[0]
-            probability_negative = sum_total[1]
-
+            probability_positive = sum_total[0]/self.weighted_n_node_samples
+            probability_negative = sum_total[1]/self.weighted_n_node_samples
+            #printf("%i \n", probability_positive)
             feature_partition_distance += sqrt(probability_positive) - sqrt(probability_negative)
 
-            hellinger_distance += (feature_partition_distance * feature_partition_distance) / (self.weighted_n_node_samples *
-                                      self.weighted_n_node_samples)
+            hellinger_distance += (feature_partition_distance * feature_partition_distance)
 
             sum_total += self.sum_stride
 
@@ -773,21 +773,19 @@ cdef class Hellinger(ClassificationCriterion):
             feature_partition_distance_right = 0.0
 
             #left branch
-            probability_positive = sum_left[0]
-            probability_negative = sum_left[1]
+            probability_positive = sum_left[0]/self.weighted_n_left
+            probability_negative = sum_left[1]/self.weighted_n_left
             feature_partition_distance_left += sqrt(probability_positive) - sqrt(probability_negative)
 
             #right branch
-            probability_positive = sum_right[0]
-            probability_negative = sum_right[1]
+            probability_positive = sum_right[0]/self.weighted_n_right
+            probability_negative = sum_right[1]/self.weighted_n_right
             feature_partition_distance_right += sqrt(probability_positive) - sqrt(probability_negative)
 
 
-            hellinger_distance_left += ( feature_partition_distance_left * feature_partition_distance_left) / (self.weighted_n_left *
-                                                self.weighted_n_left)
+            hellinger_distance_left += feature_partition_distance_left * feature_partition_distance_left
 
-            hellinger_distance_right += ( feature_partition_distance_right * feature_partition_distance_right) / (self.weighted_n_right *
-                                                  self.weighted_n_right)
+            hellinger_distance_right +=  feature_partition_distance_right * feature_partition_distance_right
 
             sum_left += self.sum_stride
             sum_right += self.sum_stride
@@ -850,7 +848,7 @@ cdef class RegressionCriterion(Criterion):
         self.sum_left = <double*> calloc(n_outputs, sizeof(double))
         self.sum_right = <double*> calloc(n_outputs, sizeof(double))
 
-        if (self.sum_total == NULL or 
+        if (self.sum_total == NULL or
                 self.sum_left == NULL or
                 self.sum_right == NULL):
             raise MemoryError()

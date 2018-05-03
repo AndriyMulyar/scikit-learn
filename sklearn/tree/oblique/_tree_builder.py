@@ -24,6 +24,8 @@ class TreeBuilder:
     def get_majority_class(self, instances, left_boundary_index, right_boundary_index):
         classes = [self.y[instances[i]] for i in range(left_boundary_index, right_boundary_index + 1)]
         values, counts = np.unique(classes, return_counts=True)
+       # print(classes)
+        #print(values[np.argmax(counts)])
         return values[np.argmax(counts)]
 
     def build(self):
@@ -37,7 +39,7 @@ class TreeBuilder:
 
         start = 0
         end= self.X.shape[0]-1
-        instances = np.arange(start, end+1) #an array of references to rows in X
+        instances = np.arange(start, end+1, dtype=int) #an array of references to rows in X
         node_queue = Queue()
 
         root_node = DecisionNode(start, end, 0) #initialize root node
@@ -59,7 +61,7 @@ class TreeBuilder:
             # print(current_node.split_record.hyperplane)
             # print("Impurity: " + str(current_node.split_record.impurity_total))
 
-            if current_node.split_record.get_goodness_of_split() < .01: #mark as leaf node if goodness of split is below .01
+            if current_node.split_record.get_goodness_of_split() == 0: #mark as leaf node if goodness of split is 0
                 current_node.is_leaf = True
                 current_node.classification = self.get_majority_class(instances, current_node.left_boundary_index, current_node.right_boundary_index)
                 continue

@@ -1,6 +1,7 @@
+# cython: profile=True
 from abc import ABC, abstractmethod
 import numpy as np
-
+cimport numpy as np
 from ._meta import DecisionNode, ObliqueSplitRecord, hyperplane_compare
 from ._criterion import Criterion
 """
@@ -56,6 +57,10 @@ class ObliqueSplitter(ABC):
         :param right_boundary:
         :return: split_index defining the partition
         """
+
+        cdef int current_left
+        cdef int j
+
         current_left = left_boundary
 
         while current_left <= right_boundary:
@@ -94,6 +99,8 @@ class ObliqueSplitter(ABC):
         if left_boundary>=right_boundary:
             return
         pivot = self._partition(instances,feature,left_boundary,right_boundary)
+        #print("pivot: %i" % pivot)
+        #print("left: %i" % left_boundary)
         self.sort_along_feature(instances, feature, left_boundary, pivot-1)
         self.sort_along_feature(instances, feature, pivot+1, right_boundary)
 
@@ -127,6 +134,11 @@ class AxisParallelSplitter(ObliqueSplitter):
         :param node: a DecisionNode
         :param instances: an array of reference indices to rows in X
         """
+
+        cdef int f
+        cdef int candidate_split_index
+
+
         super().split(node, instances)  #pre-flight checks
         dimension = self.X.shape[1]
         best_split = ObliqueSplitRecord(dimension)
@@ -139,6 +151,7 @@ class AxisParallelSplitter(ObliqueSplitter):
 
 
         for f in range(dimension): #for each feature
+            #print(f)
             """
             1. Sort instances along feature f
             2. Calculate impurity for each possible split along the sorted instances
@@ -159,7 +172,7 @@ class AxisParallelSplitter(ObliqueSplitter):
                                                                                  node.right_boundary_index)
                 current_split.number_of_instances_right = 1 + node.right_boundary_index - candidate_split_index
 
-                if current_split.get_goodness_of_split() > best_split.get_goodness_of_split():
+                if current_split.get_goodness_of_split() >= best_split.get_goodness_of_split():
                     current_split.hyperplane[-1] = -1*(self.X[instances[candidate_split_index]][f] +
                                                        self.X[instances[candidate_split_index-1]][f])/2
                     best_split.impurity_left = current_split.impurity_left
@@ -179,6 +192,7 @@ class AxisParallelSplitter(ObliqueSplitter):
         """
         self.sort_along_hyperplane(instances, best_split.hyperplane, node.left_boundary_index,
                                    node.right_boundary_index)
+        #TODO print("Best parallel hyperplane: "+ str(best_split.hyperplane))
         node.split_record = best_split
 
 
@@ -210,11 +224,25 @@ class OC1Splitter(ObliqueSplitter):
         :return: True if better split was found during
                 current_split now contains a better hyperplane after perturbation on dimension f
         """
+        cdef int i
+        cdef double U_j
+        cdef double a_f
+
+        cdef np.ndarray[double, ndim=1] hyperplane
+        cdef np.ndarray[double, ndim=1] U
+
         hyperplane = current_split.hyperplane
-        U = []
+        U = np.zeros(right_boundary_index-left_boundary_index+1, dtype=np.double)
+
         for i in range(left_boundary_index, right_boundary_index + 1):
-            U_j = (hyperplane[f] * self.X[instances[i]][f] - hyperplane_compare(self.X[instances[i]], hyperplane)) / self.X[instances[i]][f]
-            U.append(U_j)
+            if self.X[instances[i]][f] == 0:
+                U[i-left_boundary_index] = 0
+            else:
+                U_j = (hyperplane[f] * self.X[instances[i]][f] - hyperplane_compare(self.X[instances[i]], hyperplane)) / \
+                      self.X[instances[i]][f]
+                U[i - left_boundary_index] = U_j
+
+        #print(right_boundary_index-left_boundary_index)
         U = np.sort(U)
 
         # find best univariate split of U's
@@ -222,7 +250,7 @@ class OC1Splitter(ObliqueSplitter):
         temp_split.impurity_total = current_split.impurity_total
         temp_split.hyperplane = np.copy(current_split.hyperplane)
 
-        better_split = False
+        better_split_found = False
         for i in range(1, U.shape[0]):
 
             a_f = (U[i] + U[i - 1]) / 2
@@ -236,7 +264,7 @@ class OC1Splitter(ObliqueSplitter):
             temp_split.number_of_instances_right = 1 + right_boundary_index - candidate_split_index
 
             if temp_split.get_goodness_of_split() > current_split.get_goodness_of_split():
-                better_split = True
+                better_split_found = True
                 current_split.impurity_left = temp_split.impurity_left
                 current_split.impurity_right = temp_split.impurity_right
                 current_split.number_of_instances_right = temp_split.number_of_instances_right
@@ -244,7 +272,7 @@ class OC1Splitter(ObliqueSplitter):
                 current_split.hyperplane = np.copy(temp_split.hyperplane)
                 current_split.split_index = candidate_split_index-1
 
-        return better_split
+        return better_split_found
 
     def add_random_hyperplane(self, hyperplane):
         for d in range(len(hyperplane)):
@@ -275,6 +303,7 @@ class OC1Splitter(ObliqueSplitter):
         :param instances:
         :return: nothing, simply updates the fields as nodes as postcondition
         """
+
         super().split(node, instances)
         axis_parallel_splitter = AxisParallelSplitter(self.X, self.y, self.criterion, self.random_state)
 
@@ -291,6 +320,7 @@ class OC1Splitter(ObliqueSplitter):
         current_split.impurity_total = best_split.impurity_total
         #done copy
         for R in range(self.restarts+1):
+            #TODO temp comment print(R)
             if R > 1: #first iteration is with best axis parallel splits as starting hyperplane, other iterations are with random plane
                 random_plane = np.zeros(best_split.dimensions) #initialize to zero vector
                 self.add_random_hyperplane(random_plane) #add random components
@@ -329,8 +359,8 @@ class OC1Splitter(ObliqueSplitter):
                                            node.right_boundary_index)
                 current_split.impurity_total = self.criterion.calculate_impurity(instances, node.left_boundary_index,
                                                                                  node.right_boundary_index)
-                random_direction = self.random_state.randint(0,best_split.dimensions)
-                better_split_exists = self.perturb(instances, current_split, random_direction, node.left_boundary_index,
+                #random_direction = self.random_state.randint(0,best_split.dimensions)
+                better_split_exists = self.perturb(instances, current_split, 0, node.left_boundary_index,
                                                node.right_boundary_index)
                 if better_split_exists:
                     pert_seq()
@@ -348,7 +378,7 @@ class OC1Splitter(ObliqueSplitter):
 
         self.sort_along_hyperplane(instances, best_split.hyperplane, node.left_boundary_index,
                                    node.right_boundary_index)
-        print(current_split.hyperplane)
+        #print(current_split.hyperplane)
         node.split_record = best_split
 
 
