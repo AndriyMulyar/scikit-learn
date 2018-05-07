@@ -88,7 +88,7 @@ class Gini(Criterion):
         num_instances = 1+right_boundary-left_boundary
 
         class_counts = get_class_counts(instances, left_boundary, right_boundary, self.y)
-        if(len(class_counts) < 2):
+        if len(class_counts) < 2:
             return 0
 
         gini = 0
@@ -122,13 +122,12 @@ class Hellinger(Criterion):
         num_instances = 1 + right_boundary - left_boundary
 
         class_counts = get_class_counts(instances, left_boundary, right_boundary, self.y)
-        if(len(class_counts) < 2):
+        if len(class_counts) < 2:
             return 0
 
         hellinger = 0
 
         for c1 in range(0,len(class_counts)-1): #for each class
-            #print(class_counts)
             for c2 in range(c1+1,len(class_counts)):
                 prob_c1 = class_counts[c1]/num_instances
                 prob_c2 = class_counts[c2]/num_instances
@@ -136,10 +135,59 @@ class Hellinger(Criterion):
                 pair_wise_distance = math.sqrt(prob_c1) - math.sqrt(prob_c2)
                 hellinger += pair_wise_distance*pair_wise_distance
 
-        # prob_c1 = class_counts[0]/num_instances
-        # prob_c2 = class_counts[1]/num_instances
-        #
-        # pair_wise_distance = math.sqrt(prob_c1) - math.sqrt(prob_c2)
-        # hellinger += pair_wise_distance*pair_wise_distance
 
-        return math.sqrt(2) - math.sqrt(hellinger)
+        return 1 - math.sqrt(hellinger/2)
+
+
+class DynamicImpuritySelection(Criterion):
+    def __init__(self, y, imbalance_ratio_threshold = 70):
+        super().__init__(y)
+        self.imbalance_ratio_threshold = imbalance_ratio_threshold
+
+    def calculate_impurity(self, instances, left_boundary, right_boundary):
+        """
+        Dynamically selects the use of Gini or Hellinger distances based on the classes imbalance
+        ratio of node
+        :param instances:
+        :param left_boundary:
+        :param right_boundary:
+        :return:
+        """
+
+        cdef double gini
+        cdef double hellinger
+        cdef int c
+
+        num_instances = 1 + right_boundary - left_boundary
+        class_counts = get_class_counts(instances, left_boundary, right_boundary, self.y)
+
+        if len(class_counts) < 2:
+            return 0
+
+        min_class_count = np.amin(class_counts)
+        max_class_count = np.amax(class_counts)
+
+
+        #use hellinger if IR is above threshold, else gini
+        if max_class_count/min_class_count > self.imbalance_ratio_threshold: #class imbalance higher than 10
+            hellinger = 0
+
+            for c1 in range(0,len(class_counts)-1): #for each class
+                for c2 in range(c1+1,len(class_counts)):
+                    prob_c1 = class_counts[c1]/num_instances
+                    prob_c2 = class_counts[c2]/num_instances
+
+                    pair_wise_distance = math.sqrt(prob_c1) - math.sqrt(prob_c2)
+                    hellinger += pair_wise_distance*pair_wise_distance
+
+
+            return 1 - math.sqrt(hellinger/2)
+        else:
+            gini = 0
+
+            for c in range(len(class_counts)): #for each class
+                prob_c = class_counts[c]/num_instances #calculate probability of class in subset
+                gini += prob_c*prob_c
+
+            return 1-gini #subtract from maximum value to turn into impurity metric
+

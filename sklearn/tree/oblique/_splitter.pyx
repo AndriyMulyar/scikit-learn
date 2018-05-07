@@ -163,6 +163,8 @@ class AxisParallelSplitter(ObliqueSplitter):
 
             #for each candidate split in our now sorted features, consider it.
             for candidate_split_index in range(node.left_boundary_index+1, node.right_boundary_index+1):
+                # if self.y[instances[candidate_split_index]] == self.y[instances[candidate_split_index-1]]:
+                #     continue
 
                 current_split.impurity_left = self.criterion.calculate_impurity(instances,node.left_boundary_index,
                                                                                 candidate_split_index)
