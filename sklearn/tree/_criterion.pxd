@@ -27,6 +27,7 @@ cdef class Criterion:
     cdef DOUBLE_t* y                     # Values of y
     cdef SIZE_t y_stride                 # Stride in y (since n_outputs >= 1)
     cdef DOUBLE_t* sample_weight         # Sample weights
+    cdef double IR_threshold
 
     cdef SIZE_t* samples                 # Sample indices in X, y
     cdef SIZE_t start                    # samples[start:pos] are the samples in the left node

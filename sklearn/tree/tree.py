@@ -57,7 +57,7 @@ __all__ = ["DecisionTreeClassifier",
 DTYPE = _tree.DTYPE
 DOUBLE = _tree.DOUBLE
 
-CRITERIA_CLF = {"gini": _criterion.Gini, "entropy": _criterion.Entropy, "hellinger": _criterion.Hellinger}
+CRITERIA_CLF = {"gini": _criterion.Gini, "entropy": _criterion.Entropy, "hellinger": _criterion.Hellinger, "dynamic": _criterion.DynamicImpuritySelection}
 CRITERIA_REG = {"mse": _criterion.MSE, "friedman_mse": _criterion.FriedmanMSE,
                 "mae": _criterion.MAE}
 
@@ -93,7 +93,8 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                  min_impurity_decrease,
                  min_impurity_split,
                  class_weight=None,
-                 presort=False):
+                 presort=False,
+                 IR_threshold=None):
         self.criterion = criterion
         self.splitter = splitter
         self.max_depth = max_depth
@@ -107,6 +108,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         self.min_impurity_split = min_impurity_split
         self.class_weight = class_weight
         self.presort = presort
+        self.IR_threshold = IR_threshold
 
     def fit(self, X, y, sample_weight=None, check_input=True,
             X_idx_sorted=None):
@@ -330,7 +332,12 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         criterion = self.criterion
         if not isinstance(criterion, Criterion):
             if is_classification:
-                criterion = CRITERIA_CLF[self.criterion](self.n_outputs_,
+                if self.criterion == "dynamic":
+                    criterion = CRITERIA_CLF[self.criterion](self.n_outputs_,
+                                                         self.n_classes_,
+                                                             self.IR_threshold)
+                else:
+                    criterion = CRITERIA_CLF[self.criterion](self.n_outputs_,
                                                          self.n_classes_)
             else:
                 criterion = CRITERIA_REG[self.criterion](self.n_outputs_,
@@ -737,7 +744,8 @@ class DecisionTreeClassifier(BaseDecisionTree, ClassifierMixin):
                  min_impurity_decrease=0.,
                  min_impurity_split=None,
                  class_weight=None,
-                 presort=False):
+                 presort=False,
+                 IR_threshold=10):
         super(DecisionTreeClassifier, self).__init__(
             criterion=criterion,
             splitter=splitter,
@@ -751,7 +759,8 @@ class DecisionTreeClassifier(BaseDecisionTree, ClassifierMixin):
             random_state=random_state,
             min_impurity_decrease=min_impurity_decrease,
             min_impurity_split=min_impurity_split,
-            presort=presort)
+            presort=presort,
+            IR_threshold=IR_threshold)
 
     def fit(self, X, y, sample_weight=None, check_input=True,
             X_idx_sorted=None):

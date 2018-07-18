@@ -138,6 +138,37 @@ class Hellinger(Criterion):
 
         return 1 - math.sqrt(hellinger/2)
 
+class Entropy(Criterion):
+
+    def __init__(self, y):
+        super().__init__(y)
+
+    def calculate_impurity(self, instances, left_boundary, right_boundary):
+        """
+        Calculates the entropy of instances between left_boundary and right_boundary
+
+        :param split_record:
+        :return: entropy
+        """
+        cdef double entropy = 0
+        cdef int c
+
+        num_instances = 1 + right_boundary - left_boundary
+
+        class_counts = get_class_counts(instances, left_boundary, right_boundary, self.y)
+        if len(class_counts) < 2:
+            return 0
+
+
+
+        for c in range(len(class_counts)): #for each class
+            prob_c = class_counts[c]/num_instances #calculate probability of class in subset
+            if prob_c > 0.0:
+                entropy -= prob_c*np.log(prob_c)
+
+
+        return entropy
+
 
 class DynamicImpuritySelection(Criterion):
     def __init__(self, y, imbalance_ratio_threshold = 70):
@@ -168,8 +199,10 @@ class DynamicImpuritySelection(Criterion):
         max_class_count = np.amax(class_counts)
 
 
+
         #use hellinger if IR is above threshold, else gini
         if max_class_count/min_class_count > self.imbalance_ratio_threshold: #class imbalance higher than 10
+            #print(max_class_count/min_class_count)
             hellinger = 0
 
             for c1 in range(0,len(class_counts)-1): #for each class

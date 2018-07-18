@@ -598,6 +598,10 @@ cdef class Tree:
         def __get__(self):
             return self._get_value_ndarray()[:self.node_count]
 
+    property nodes:
+        def __get__(self):
+            return self._get_node_ndarray()
+
     def __cinit__(self, int n_features, np.ndarray[SIZE_t, ndim=1] n_classes,
                   int n_outputs):
         """Constructor."""
@@ -1090,6 +1094,31 @@ cdef class Tree:
                 importances /= normalizer
 
         return importances
+
+    cpdef compute_ir_at_nodes(self):
+        """Computes the importance of each feature (aka variable)."""
+        cdef Node* left
+        cdef Node* right
+        cdef Node* nodes = self.nodes
+        cdef Node* node = nodes
+        cdef Node* end_node = node + self.node_count
+        cdef int count = 0
+
+
+        cdef np.ndarray[np.float64_t, ndim=1] importances
+        importances = np.zeros((self.n_features,))
+        cdef DOUBLE_t* importance_data = <DOUBLE_t*>importances.data
+
+        with nogil:
+            while node != end_node:
+                if node.left_child != _TREE_LEAF:
+                    # ... and node.right_child != _TREE_LEAF:
+                    left = &nodes[node.left_child]
+                    right = &nodes[node.right_child]
+                node += 1
+                count +=1
+
+        print(count)
 
     cdef np.ndarray _get_value_ndarray(self):
         """Wraps value as a 3-d NumPy array.

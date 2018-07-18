@@ -29,6 +29,7 @@ class DecisionNode:
 
         self.depth = depth
 
+
         self.split_record = None  #a split record object holding the best oblique split found on DecisionNode
 
 class ObliqueSplitRecord:
@@ -45,6 +46,8 @@ class ObliqueSplitRecord:
 
         self.number_of_instances_left = None #stores the number of instances in left child
         self.number_of_instances_right = None  # stores the number of instances in right child
+
+        self.criterion_used = None
 
         self.split_index = None     #index in instances[] that defines the bi-partition of instances at the given node
                                     #instances[split_index] is in left split, instances[split_index+1] in right split

@@ -8,8 +8,8 @@ import matplotlib.pyplot as plt
 
 from ._tree_builder import TreeBuilder
 from ._meta import hyperplane_compare
-from ._splitter import AxisParallelSplitter, OC1Splitter
-from ._criterion import Gini, Hellinger, DynamicImpuritySelection
+from ._splitter import AxisParallelSplitter, OC1Splitter, AxisParallelDynamicImpuritySplitter
+from ._criterion import Gini, Hellinger, Entropy, DynamicImpuritySelection
 
 sys.setrecursionlimit(3000)
 
@@ -26,8 +26,8 @@ Notice that traditional axis parallel splitting is the degenerate case of obliqu
 """
 Define splitters and criteria
 """
-SPLITTERS = {"axis_parallel": AxisParallelSplitter, "oc1": OC1Splitter}
-CRITERIONS = {"gini": Gini, "hellinger": Hellinger, "dynamic": DynamicImpuritySelection}
+SPLITTERS = {"axis_parallel": AxisParallelSplitter, "oc1": OC1Splitter, "axis_parallel_dynamic": AxisParallelDynamicImpuritySplitter}
+CRITERIONS = {"gini": Gini, "hellinger": Hellinger,"entropy": Entropy, "dynamic": DynamicImpuritySelection}
 
 class ObliqueDecisionTree(BaseEstimator, ClassifierMixin):
     def __init__(self, splitter="oc1", criterion="gini", random_seed = 1, IR_threshold = 60):
@@ -61,7 +61,12 @@ class ObliqueDecisionTree(BaseEstimator, ClassifierMixin):
         else:
             criterion = CRITERIONS[self.criterion](y)
 
-        splitter = SPLITTERS[self.splitter](X, y, criterion, self.random_state)
+        if self.splitter == "axis_parallel_dynamic":
+            splitter = SPLITTERS[self.splitter](X, y, criterion, self.random_state, imbalance_ratio_threshold=self.IR_threshold)
+        else:
+            splitter = SPLITTERS[self.splitter](X, y, criterion, self.random_state)
+
+
 
         builder = TreeBuilder(X,y,splitter)
 
@@ -127,7 +132,7 @@ class ObliqueDecisionTree(BaseEstimator, ClassifierMixin):
             current_node = node_queue.get()
             if current_node.is_leaf:
                 continue
-            if t==10:
+            if t==20:
                 break
             current_hyperplane = current_node.split_record.hyperplane
             # print(current_hyperplane)

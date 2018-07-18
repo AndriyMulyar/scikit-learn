@@ -46,9 +46,12 @@ class TreeBuilder:
 
         root_node = DecisionNode(start, end, 0) #initialize root node
         node_queue.put(root_node)
+
         splitter = self.splitter
 
+
         while(not node_queue.empty()):
+
             current_node = node_queue.get()
 
             #label and skip node if it only contains instances from one class.

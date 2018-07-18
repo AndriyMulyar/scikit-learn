@@ -3,7 +3,8 @@ from abc import ABC, abstractmethod
 import numpy as np
 cimport numpy as np
 from ._meta import DecisionNode, ObliqueSplitRecord, hyperplane_compare
-from ._criterion import Criterion
+
+from ._criterion import Criterion, Gini, Hellinger, get_class_counts
 """
 Bi-partitions the instances in a given DecisionNode based on a particular splitting algorithm.
 """
@@ -128,6 +129,7 @@ class AxisParallelSplitter(ObliqueSplitter):
         super().__init__(X,y,criterion, random_state)
 
 
+
     def split(self, node, instances):
         """
         Finds the best axis parallel split on instances and stores it in node.split_record
@@ -176,7 +178,7 @@ class AxisParallelSplitter(ObliqueSplitter):
 
                 if current_split.get_goodness_of_split() >= best_split.get_goodness_of_split():
                     current_split.hyperplane[-1] = -1*(self.X[instances[candidate_split_index]][f] +
-                                                       self.X[instances[candidate_split_index-1]][f])/2
+                                                       self.X[instances[candidate_split_index-1]][f])/2.0
                     best_split.impurity_left = current_split.impurity_left
                     best_split.impurity_right = current_split.impurity_right
                     best_split.number_of_instances_left = current_split.number_of_instances_left
@@ -201,7 +203,101 @@ class AxisParallelSplitter(ObliqueSplitter):
 
 
 
+class AxisParallelDynamicImpuritySplitter(ObliqueSplitter):
 
+    def __init__(self,X,y,criterion, random_state = None, imbalance_ratio_threshold = 60):
+        super().__init__(X,y,criterion, random_state)
+        self.imbalance_ratio_threshold = imbalance_ratio_threshold
+
+
+
+    def split(self, node, instances):
+        """
+        Finds the best axis parallel split on instances and stores it in node.split_record
+
+        Determines impurity criterion to use when testing for potential splits by making use of the imabalance
+        ratio at the current node.
+
+
+        :param node: a DecisionNode
+        :param instances: an array of reference indices to rows in X
+        """
+
+        cdef int f
+        cdef int candidate_split_index
+
+
+        super().split(node, instances)  #pre-flight checks
+
+        class_counts = get_class_counts(instances, node.left_boundary_index, node.right_boundary_index, self.y)
+        min_class_count = np.amin(class_counts)
+        max_class_count = np.amax(class_counts)
+
+        if max_class_count/min_class_count > self.imbalance_ratio_threshold: #use hellinger for all splits
+            self.criterion = Hellinger(self.y)
+            node.split_record.criterion_used = "hellinger"
+        else:
+            self.criterion = Gini(self.y)
+            node.split_record.criterion_used = "gini"
+
+        #print(self.criterion)
+
+
+        dimension = self.X.shape[1]
+        best_split = ObliqueSplitRecord(dimension)
+        current_split = ObliqueSplitRecord(dimension)
+        best_split.impurity_total = self.criterion.calculate_impurity(instances, node.left_boundary_index, node.right_boundary_index)
+        current_split.impurity_total = best_split.impurity_total
+
+
+
+
+        for f in range(dimension): #for each feature
+            #print(f)
+            """
+            1. Sort instances along feature f
+            2. Calculate impurity for each possible split along the sorted instances
+            3. update best_split_record if goodness of split is greater in a new found split than previous max
+            """
+            current_split.hyperplane.fill(0) #reset hyperplane
+            current_split.hyperplane[f] = 1 #specify which dimension the new potential best hyperplane resides in
+            self.sort_along_feature(instances, f, node.left_boundary_index, node.right_boundary_index)
+
+            #for each candidate split in our now sorted features, consider it.
+            for candidate_split_index in range(node.left_boundary_index+1, node.right_boundary_index+1):
+                # if self.y[instances[candidate_split_index]] == self.y[instances[candidate_split_index-1]]:
+                #     continue
+
+                current_split.impurity_left = self.criterion.calculate_impurity(instances,node.left_boundary_index,
+                                                                                candidate_split_index)
+                current_split.number_of_instances_left = candidate_split_index - node.left_boundary_index
+
+                current_split.impurity_right = self.criterion.calculate_impurity(instances, candidate_split_index,
+                                                                                 node.right_boundary_index)
+                current_split.number_of_instances_right = 1 + node.right_boundary_index - candidate_split_index
+
+                if current_split.get_goodness_of_split() >= best_split.get_goodness_of_split():
+                    current_split.hyperplane[-1] = -1*(self.X[instances[candidate_split_index]][f] +
+                                                       self.X[instances[candidate_split_index-1]][f])/2.0
+                    best_split.impurity_left = current_split.impurity_left
+                    best_split.impurity_right = current_split.impurity_right
+                    best_split.number_of_instances_left = current_split.number_of_instances_left
+                    best_split.number_of_instances_right = current_split.number_of_instances_right
+                    best_split.hyperplane = np.copy(current_split.hyperplane)
+                    best_split.split_index = candidate_split_index-1
+
+
+
+
+        """
+        best_split now holds the values for the best possible axis_parallel split on the given node.
+        instances, however, is still sorted according to the last feature considered.
+        re-sort instances according to the best splitting hyperplane.
+        """
+        self.sort_along_hyperplane(instances, best_split.hyperplane, node.left_boundary_index,
+                                   node.right_boundary_index)
+        #TODO print("Best parallel hyperplane: "+ str(best_split.hyperplane))
+        node.split_record = best_split
 
 
 

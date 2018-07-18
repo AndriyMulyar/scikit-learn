@@ -213,7 +213,7 @@ cdef class ClassificationCriterion(Criterion):
     """Abstract criterion for classification."""
 
     def __cinit__(self, SIZE_t n_outputs,
-                  np.ndarray[SIZE_t, ndim=1] n_classes):
+                  np.ndarray[SIZE_t, ndim=1] n_classes, double IR_threshold=10):
         """Initialize attributes for this criterion.
 
         Parameters
@@ -227,6 +227,7 @@ cdef class ClassificationCriterion(Criterion):
         self.y = NULL
         self.y_stride = 0
         self.sample_weight = NULL
+        self.IR_threshold = IR_threshold
 
         self.samples = NULL
         self.start = 0
@@ -278,7 +279,7 @@ cdef class ClassificationCriterion(Criterion):
     def __reduce__(self):
         return (type(self),
                 (self.n_outputs,
-                 sizet_ptr_to_ndarray(self.n_classes, self.n_outputs)),
+                 sizet_ptr_to_ndarray(self.n_classes, self.n_outputs), self.IR_threshold),
                 self.__getstate__())
 
     cdef int init(self, DOUBLE_t* y, SIZE_t y_stride,
@@ -737,7 +738,7 @@ cdef class Hellinger(ClassificationCriterion):
 
             sum_total += self.sum_stride
 
-        return sqrt(2) - sqrt(hellinger_distance)
+        return (1 - sqrt(hellinger_distance/2))/self.n_outputs
 
     cdef void children_impurity(self, double* impurity_left,
                                 double* impurity_right) nogil:
@@ -790,8 +791,210 @@ cdef class Hellinger(ClassificationCriterion):
             sum_left += self.sum_stride
             sum_right += self.sum_stride
 
-        impurity_left[0] = sqrt(2) - sqrt(hellinger_distance_left)
-        impurity_right[0] = sqrt(2) - sqrt(hellinger_distance_right)
+        impurity_left[0] = (1 - sqrt(hellinger_distance_left/2))/self.n_outputs
+        impurity_right[0] = (1 - sqrt(hellinger_distance_right/2))/self.n_outputs
+
+
+cdef class DynamicImpuritySelection(ClassificationCriterion):
+    """Computes impurity of a split by dynamically selecting either Gini or Hellinger depending on the imbalance
+    ratio of the current split.
+
+    Selects Hellinger if the imbalance ratio of split > IR_threshold
+
+    """
+
+    cdef double max(self, double a, double b) nogil:
+        if(a>b):
+            return a
+        return b
+    cdef double min(self, double a, double b) nogil:
+        if(a>b):
+            return b
+        return a
+
+
+    cdef double node_impurity(self) nogil:
+        """Evaluate the impurity of the current node, i.e. the impurity of
+        samples[start:end] using Hellinger Distance."""
+
+        cdef double IR_threshold = self.IR_threshold
+
+        cdef SIZE_t* n_classes = self.n_classes
+        cdef double* sum_total = self.sum_total
+
+        cdef double I_ratio
+
+        #hellinger definitions
+        cdef double hellinger_distance = 0.0
+        cdef double feature_partition_distance #component of total distance calculation
+        cdef double probability_positive
+        cdef double probability_negative
+
+        #gini definitions
+        cdef double gini = 0.0
+        cdef double sq_count
+        cdef double count_k
+        cdef SIZE_t c
+
+        cdef SIZE_t k
+
+        if(sum_total[0] == 0.0 or sum_total[1] == 0.0): #split is perfectly pure
+            return 0.0
+
+
+        I_ratio = max(sum_total[0], sum_total[1]) / min(sum_total[0], sum_total[1])
+        # printf("Sum_total: %f \n", sum_total[0])
+        #printf("Threshold: %f \n", IR_threshold)
+        #printf("%f \n", I_ratio)
+
+        if(I_ratio > IR_threshold):
+            """
+            Use Hellinger Distance as impurity criterion
+            """
+            for k in range(self.n_outputs): #possible class values
+
+                feature_partition_distance = 0.0
+
+                probability_positive = sum_total[0]/self.weighted_n_node_samples
+                probability_negative = sum_total[1]/self.weighted_n_node_samples
+                feature_partition_distance += sqrt(probability_positive) - sqrt(probability_negative)
+
+                hellinger_distance += (feature_partition_distance * feature_partition_distance)
+
+                sum_total += self.sum_stride
+
+            return (1 - sqrt(hellinger_distance/2))/self.n_outputs
+        else:
+            """
+            Use Gini as impurity criterion
+            """
+            for k in range(self.n_outputs):
+                sq_count = 0.0
+
+                for c in range(n_classes[k]):
+                    count_k = sum_total[c]
+                    sq_count += count_k * count_k
+
+                gini += 1.0 - sq_count / (self.weighted_n_node_samples *
+                                          self.weighted_n_node_samples)
+
+                sum_total += self.sum_stride
+            return gini / self.n_outputs
+
+    cdef void children_impurity(self, double* impurity_left,
+                                double* impurity_right) nogil:
+        """Evaluate the impurity in children nodes
+
+        i.e. the impurity of the left child (samples[start:pos]) and the
+        impurity the right child (samples[pos:end]) using Hellinger distance.
+
+        Parameters
+        ----------
+        impurity_left : DTYPE_t
+            The memory address to save the impurity of the left node to
+        impurity_right : DTYPE_t
+            The memory address to save the impurity of the right node to
+        """
+
+        cdef double IR_threshold = self.IR_threshold
+
+        cdef SIZE_t* n_classes = self.n_classes
+        cdef double* sum_left = self.sum_left
+        cdef double* sum_right = self.sum_right
+
+        cdef double I_ratio_left
+        cdef double I_ratio_right
+
+        #hellinger definitions
+        cdef double hellinger_distance_left = 0.0
+        cdef double hellinger_distance_right = 0.0
+        cdef double feature_partition_distance_left
+        cdef double feature_partition_distance_right
+        cdef double probability_positive
+        cdef double probability_negative
+
+        #gini definitions
+        cdef double gini_left = 0.0
+        cdef double gini_right = 0.0
+        cdef double sq_count_left
+        cdef double sq_count_right
+        cdef double count_k
+        cdef SIZE_t c
+
+        cdef SIZE_t k
+
+        skip_left = False
+        skip_right = False
+        if(sum_left[0] == 0.0 or sum_left[1] == 0.0):
+            impurity_left[0] = 0.0
+            skip_left = True
+        if(sum_right[0] == 0.0 or sum_right[1]== 0.0):
+            impurity_right[0] = 0.0
+            skip_right = True
+
+
+
+
+        I_ratio_left = max(sum_left[0], sum_left[1]) / min(sum_left[0], sum_left[1])
+        I_ratio_right = max(sum_right[0], sum_right[1]) / min(sum_right[0], sum_right[1])
+
+        # printf("Sum_total: %f \n", sum_right[0])
+        # printf("Threshold: %f \n", IR_threshold)
+        #printf("Left: %f \n", I_ratio_left)
+        #printf("Right: %f \n", I_ratio_right)
+
+        #Compute impurity for left node
+        if(not skip_left):
+            I_ratio_left = max(sum_left[0], sum_left[1])/ min(sum_left[0], sum_left[1])
+            if(I_ratio_left > IR_threshold):
+                """Use Hellinger"""
+                for k in range(self.n_outputs):
+                    feature_partition_distance_left = 0.0
+                    probability_positive = sum_left[0]/self.weighted_n_left
+                    probability_negative = sum_left[1]/self.weighted_n_left
+                    feature_partition_distance_left += sqrt(probability_positive) - sqrt(probability_negative)
+                    hellinger_distance_left += feature_partition_distance_left * feature_partition_distance_left
+                    sum_left += self.sum_stride
+                impurity_left[0] = (1 - sqrt(hellinger_distance_left/2))/self.n_outputs
+            else:
+                """Use gini"""
+                for k in range(self.n_outputs):
+                    sq_count_left = 0.0
+                    for c in range(n_classes[k]):
+                        count_k = sum_left[c]
+                        sq_count_left += count_k * count_k
+                    gini_left += 1.0 - sq_count_left / (self.weighted_n_left *
+                                                    self.weighted_n_left)
+                    sum_left += self.sum_stride
+                impurity_left[0] = gini_left / self.n_outputs
+
+        #Compute impurity for right node
+        if(not skip_right):
+            I_ratio_right = max(sum_right[0], sum_right[1])/ min(sum_right[0], sum_right[1])
+            if(I_ratio_right > IR_threshold):
+                """Use Hellinger"""
+                for k in range(self.n_outputs):
+                    feature_partition_distance_right = 0.0
+                    probability_positive = sum_right[0]/self.weighted_n_right
+                    probability_negative = sum_right[1]/self.weighted_n_right
+                    feature_partition_distance_right += sqrt(probability_positive) - sqrt(probability_negative)
+                    hellinger_distance_right +=  feature_partition_distance_right * feature_partition_distance_right
+                    sum_right += self.sum_stride
+                impurity_right[0] = (1 - sqrt(hellinger_distance_right/2))/self.n_outputs
+            else:
+                """Use gini"""
+                for k in range(self.n_outputs):
+                    sq_count_right = 0.0
+
+                    for c in range(n_classes[k]):
+                        count_k = sum_right[c]
+                        sq_count_right += count_k * count_k
+
+                    gini_right += 1.0 - sq_count_right / (self.weighted_n_right *
+                                                          self.weighted_n_right)
+                    sum_right += self.sum_stride
+                impurity_right[0] = gini_right / self.n_outputs
+
 
 
 cdef class RegressionCriterion(Criterion):

@@ -313,6 +313,8 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble)):
             for i in range(n_more_estimators):
                 tree = self._make_estimator(append=False,
                                             random_state=random_state)
+                # ir_threshold = random_state.randint(20,100)
+                # tree.set_params(IR_threshold = ir_threshold)
                 trees.append(tree)
 
             # Parallel loop: we use the threading backend as the Cython code
@@ -987,7 +989,8 @@ class RandomForestClassifier(ForestClassifier):
                  random_state=None,
                  verbose=0,
                  warm_start=False,
-                 class_weight=None):
+                 class_weight=None,
+                 IR_threshold = 10):
         super(RandomForestClassifier, self).__init__(
             base_estimator=DecisionTreeClassifier(),
             n_estimators=n_estimators,
@@ -995,7 +998,7 @@ class RandomForestClassifier(ForestClassifier):
                               "min_samples_leaf", "min_weight_fraction_leaf",
                               "max_features", "max_leaf_nodes",
                               "min_impurity_decrease", "min_impurity_split",
-                              "random_state"),
+                              "random_state", "IR_threshold"),
             bootstrap=bootstrap,
             oob_score=oob_score,
             n_jobs=n_jobs,
@@ -1013,6 +1016,7 @@ class RandomForestClassifier(ForestClassifier):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_impurity_decrease = min_impurity_decrease
         self.min_impurity_split = min_impurity_split
+        self.IR_threshold = IR_threshold
 
 
 class RandomForestRegressor(ForestRegressor):
