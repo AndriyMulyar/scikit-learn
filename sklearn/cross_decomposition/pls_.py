@@ -16,7 +16,7 @@ from ..base import BaseEstimator, RegressorMixin, TransformerMixin
 from ..utils import check_array, check_consistent_length
 from ..utils.extmath import svd_flip
 from ..utils.validation import check_is_fitted, FLOAT_DTYPES
-from ..externals import six
+from ..exceptions import ConvergenceWarning
 
 __all__ = ['PLSCanonical', 'PLSRegression', 'PLSSVD']
 
@@ -74,7 +74,8 @@ def _nipals_twoblocks_inner_loop(X, Y, mode="A", max_iter=500, tol=1e-06,
         if np.dot(x_weights_diff.T, x_weights_diff) < tol or Y.shape[1] == 1:
             break
         if ite == max_iter:
-            warnings.warn('Maximum number of iterations reached')
+            warnings.warn('Maximum number of iterations reached',
+                          ConvergenceWarning)
             break
         x_weights_old = x_weights
         ite += 1
@@ -115,8 +116,8 @@ def _center_scale_xy(X, Y, scale=True):
     return X, Y, x_mean, y_mean, x_std, y_std
 
 
-class _PLS(six.with_metaclass(ABCMeta), BaseEstimator, TransformerMixin,
-           RegressorMixin):
+class _PLS(BaseEstimator, TransformerMixin, RegressorMixin,
+           metaclass=ABCMeta):
     """Partial Least Squares (PLS)
 
     This class implements the generic PLS algorithm, constructors' parameters
@@ -587,7 +588,7 @@ class PLSRegression(_PLS):
 
     def __init__(self, n_components=2, scale=True,
                  max_iter=500, tol=1e-06, copy=True):
-        super(PLSRegression, self).__init__(
+        super().__init__(
             n_components=n_components, scale=scale,
             deflation_mode="regression", mode="A",
             norm_y_weights=False, max_iter=max_iter, tol=tol,
@@ -733,7 +734,7 @@ class PLSCanonical(_PLS):
 
     def __init__(self, n_components=2, scale=True, algorithm="nipals",
                  max_iter=500, tol=1e-06, copy=True):
-        super(PLSCanonical, self).__init__(
+        super().__init__(
             n_components=n_components, scale=scale,
             deflation_mode="canonical", mode="A",
             norm_y_weights=True, algorithm=algorithm,
@@ -772,6 +773,25 @@ class PLSSVD(BaseEstimator, TransformerMixin):
 
     y_scores_ : array, [n_samples, n_components]
         Y scores.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from sklearn.cross_decomposition import PLSSVD
+    >>> X = np.array([[0., 0., 1.],
+    ...     [1.,0.,0.],
+    ...     [2.,2.,2.],
+    ...     [2.,5.,4.]])
+    >>> Y = np.array([[0.1, -0.2],
+    ...     [0.9, 1.1],
+    ...     [6.2, 5.9],
+    ...     [11.9, 12.3]])
+    >>> plsca = PLSSVD(n_components=2)
+    >>> plsca.fit(X, Y)
+    PLSSVD(copy=True, n_components=2, scale=True)
+    >>> X_c, Y_c = plsca.transform(X, Y)
+    >>> X_c.shape, Y_c.shape
+    ((4, 2), (4, 2))
 
     See also
     --------
